@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block titulo %}Mapas · Recaudador del Bosque{% endblock %}
+{% block contenido %}
+<h1>Mapas de los niveles</h1>
+<p class="sub">Por dónde camina la gente en cada nivel (todas las partidas) y recorridos individuales.</p>
+
+<div class="tabs">
+  {% for nid, nombre in niveles %}
+    <a href="?nivel={{ loop.index0 }}" class="{{ 'activo' if loop.index0 == nivel }}">{{ '%02d' | format(loop.index) }} {{ nombre }}</a>
+  {% endfor %}
+</div>
+
+<section class="tarjeta mapa-tarjeta">
+  <div class="cab">
+    <div>
+      <p class="sobre">MAPA DE CALOR</p>
+      <h2>{{ niveles[nivel][1] }}</h2>
+      <p class="muted">{{ calor.intentos }} intento(s) registrados · cada cuadro = {{ calor.celda | int }} m × {{ calor.celda | int }} m</p>
+    </div>
+    <div class="controles">
+      <button type="button" onclick="M && M.zoom(1/1.3)">+</button>
+      <button type="button" onclick="M && M.zoom(1.3)">−</button>
+      <button type="button" onclick="M && M.ajustar()">Ajustar vista</button>
+    </div>
+  </div>
+  {% if calor.plano %}
+    <svg id="mapa" class="mapa"></svg>
+    <div class="leyenda">
+      <span><i class="lg calor"></i> Más tiempo ahí</span>
+      <span><i class="lg bellota"></i> Bellota (% de intentos que la encontraron)</span>
+      <span><i class="lg abandono"></i> Donde abandonaron</span>
+      <span><i class="lg animal"></i> Animal</span>
+      <span><i class="lg plataforma"></i> Plataforma</span>
+      <span class="muted">Rueda del ratón = zoom · arrastra para mover</span>
+    </div>
+  {% else %}
+    <div class="vacio">Todavía no hay recorridos de este nivel con la versión nueva del juego.<br>Juega este nivel con el servidor prendido y aparecerá aquí.</div>
+  {% endif %}
+</section>
+
+<section class="tarjeta">
+  <h2>Recorridos individuales</h2>
+  <table class="tabla">
+    <thead><tr><th>Jugador</th><th>Inicio</th><th>Estado</th><th class="num">Duración</th><th class="num">Posiciones</th><th></th></tr></thead>
+    <tbody>
+    {% for r in recorridos %}
+      <tr>
+        <td>{{ r.nombre }}</td><td>{{ r.inicio | fecha }}</td>
+        <td>{% if r.fin %}<span class="chip ok">Terminado</span>{% else %}<span class="chip">Sin terminar</span>{% endif %}</td>
+        <td class="num">{{ r.duracion_seg | tiempo if r.duracion_seg else '—' }}</td>
+        <td class="num">{{ r.puntos }}</td>
+        <td>{% if r.puntos %}<a class="ver" href="/recorridos/{{ r.id }}">Ver recorrido →</a>{% else %}<span class="muted">sin mapa</span>{% endif %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="muted">Nadie ha jugado este nivel todavía.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}
+
+{% block scripts %}
+{% if calor.plano %}
+<script>
+  const C = {{ calor | tojson }};
+  const M = crearMapa(document.getElementById("mapa"), C.plano);
+  // Celdas del mapa de calor (una escala secuencial: transparente -> dorado intenso).
+  const s = C.celda;
+  for (const [x, z, n] of C.celdas) {
+    const [cx, cy] = M.P(x, z);
+    const a = Math.max(0.12, Math.sqrt(n / C.max));
+    const r = M.el("rect", { x: cx - s / 2, y: cy - s / 2, width: s, height: s, class: "m-celda", "fill-opacity": a.toFixed(2) }, M.capas.calor);
+    r.dataset.tip = `${n} segundo(s) acumulados aquí`;
+  }
+  // % de intentos que encontraron cada bellota.
+  for (const b of C.plano.bellotas || []) {
+    const n = C.bellotas[b.id] || 0;
+    const pct = C.intentos ? Math.round(100 * n / C.intentos) : 0;
+    const [cx, cy] = M.P(b.x, b.z);
+    const t = M.el("text", { x: cx, y: cy + (cy < 0 ? 2.2 : -1.4), class: "m-txt m-txt-oro", "text-anchor": "middle" }, M.capas.etiquetas);
+    t.textContent = pct + "%";
+    if (M.bellotas[b.id]) M.bellotas[b.id].dataset.tip = `Bellota ${b.id}: la encontró el ${pct}% (${n} de ${C.intentos})`;
+  }
+  for (const [x, z] of C.abandonos) {
+    const [cx, cy] = M.P(x, z);
+    const g = M.el("g", { class: "m-abandono" }, M.capas.eventos);
+    M.el("path", { d: `M${cx - 0.6} ${cy - 0.6} L${cx + 0.6} ${cy + 0.6} M${cx + 0.6} ${cy - 0.6} L${cx - 0.6} ${cy + 0.6}` }, g);
+    g.dataset.tip = "Aquí abandonó un jugador";
+  }
+</script>
+{% endif %}
+{% endblock %}

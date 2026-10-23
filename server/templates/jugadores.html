@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block titulo %}Jugadores · Recaudador del Bosque{% endblock %}
+{% block contenido %}
+<h1>Jugadores</h1>
+{% if jugadores %}
+<div class="tarjeta">
+<table class="tabla">
+  <thead>
+    <tr><th>Jugador</th><th class="num">Partidas</th><th class="num">Completadas</th>
+        <th class="num">Mejor recaudación</th><th class="num">Bellotas</th>
+        <th class="num">Tiempo jugado</th><th>Última vez</th></tr>
+  </thead>
+  <tbody>
+  {% for j in jugadores %}
+    <tr>
+      <td><a href="/jugadores/{{ j.id }}">{{ j.nombre }}</a></td>
+      <td class="num">{{ j.partidas }}</td>
+      <td class="num">{{ j.completadas }}</td>
+      <td class="num oro">${{ j.mejor_recaudado }}</td>
+      <td class="num">{{ j.bellotas }}</td>
+      <td class="num">{{ j.tiempo_total | tiempo }}</td>
+      <td>{{ j.ultima_vez | fecha }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<div class="vacio">Todavía no se ha registrado ningún jugador.</div>
+{% endif %}
+{% endblock %}

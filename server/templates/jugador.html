@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block titulo %}{{ jugador.nombre }} · Recaudador del Bosque{% endblock %}
+{% block contenido %}
+<p class="migas"><a href="/jugadores">← Jugadores</a></p>
+<h1>{{ jugador.nombre }}</h1>
+<p class="sub">Registrado el {{ jugador.creado | fecha }} · {{ partidas | length }} partida(s)</p>
+{% if jugador.edad or jugador.sexo or jugador.lugar or jugador.ingresos %}
+<div class="chips perfil">
+  <span class="chip">Edad: {{ jugador.edad or '—' }}</span>
+  <span class="chip">Sexo: {{ jugador.sexo or '—' }}</span>
+  <span class="chip">Lugar: {{ jugador.lugar or '—' }}</span>
+  <span class="chip">Ingresos: {{ jugador.ingresos or '—' }}</span>
+</div>
+{% endif %}
+
+<div class="tarjeta">
+<table class="tabla">
+  <thead>
+    <tr><th>Inicio</th><th>Estado</th><th class="num">Recaudado</th><th class="num">Dinero</th>
+        <th class="num">Bellotas</th><th class="num">Monedas</th><th class="num">Tiempo</th><th></th></tr>
+  </thead>
+  <tbody>
+  {% for p in partidas %}
+    <tr>
+      <td>{{ p.inicio | fecha }}</td>
+      <td>{% if p.completada %}<span class="chip ok">Completada</span>
+          {% else %}<span class="chip">En {{ NIVELES.get(p.nivel_max, 'nivel ' ~ p.nivel_max) }}</span>{% endif %}</td>
+      <td class="num oro">${{ p.total_recaudado }}</td>
+      <td class="num">${{ p.dinero }}</td>
+      <td class="num">{{ p.bellotas }}</td>
+      <td class="num">{{ p.monedas }}</td>
+      <td class="num">{{ p.tiempo_seg | tiempo }}</td>
+      <td><a class="ver" href="/partidas/{{ p.id }}">Detalle →</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

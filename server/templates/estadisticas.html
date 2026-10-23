@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block titulo %}Estadísticas · Recaudador del Bosque{% endblock %}
+{% block contenido %}
+<h1>Estadísticas</h1>
+
+<div class="kpis">
+  <div class="kpi"><span>Jugadores</span><b>{{ totales.jugadores }}</b></div>
+  <div class="kpi"><span>Partidas</span><b>{{ totales.partidas }}</b></div>
+  <div class="kpi"><span>Completadas</span><b>{{ totales.completadas }}</b></div>
+  <div class="kpi"><span>Tiempo total jugado</span><b>{{ totales.tiempo_total | tiempo }}</b></div>
+  <div class="kpi"><span>Recaudado (todos)</span><b class="oro">${{ totales.recaudado_total }}</b></div>
+  <div class="kpi"><span>Eventos registrados</span><b>{{ totales.eventos }}</b></div>
+</div>
+
+<div class="grid2">
+  <section class="tarjeta">
+    <h2>Acertijos por animal</h2>
+    {% for a in acertijos %}
+      {% set p = pct(a.aciertos, a.intentos) %}
+      <div class="barra">
+        <span class="lbl">{{ a.animal }}</span>
+        <span class="pista"><span class="relleno" style="width: {{ p }}%"></span></span>
+        <span class="val">{{ p }}% <small class="muted">({{ a.aciertos }}/{{ a.intentos }} · {{ '%.1f' | format(a.seg_promedio or 0) }} s)</small></span>
+      </div>
+    {% else %}<p class="muted">Sin datos.</p>{% endfor %}
+  </section>
+
+  <section class="tarjeta">
+    <h2>Lo que paga cada animal</h2>
+    {% set maximo = (cobros | map(attribute='total') | max) if cobros else 0 %}
+    {% for c in cobros %}
+      <div class="barra">
+        <span class="lbl">{{ c.animal }}</span>
+        <span class="pista"><span class="relleno oro-bg" style="width: {{ pct(c.total, maximo) }}%"></span></span>
+        <span class="val">${{ c.total }} <small class="muted">({{ c.pagaron }}/{{ c.visitas }} pagaron)</small></span>
+      </div>
+    {% else %}<p class="muted">Sin datos.</p>{% endfor %}
+  </section>
+
+  <section class="tarjeta ancho">
+    <h2>Niveles</h2>
+    <table class="tabla">
+      <thead><tr><th>Nivel</th><th class="num">Jugado</th><th class="num">Terminado</th>
+        <th class="num">Tiempo prom.</th><th class="num">Bellotas prom.</th><th class="num">Monedas prom.</th></tr></thead>
+      <tbody>
+      {% for n in niveles %}
+        <tr><td>{{ n.nivel_nombre }}</td><td class="num">{{ n.veces }}</td><td class="num">{{ n.terminados }}</td>
+          <td class="num">{{ n.duracion_prom | tiempo }}</td>
+          <td class="num">{{ '%.1f' | format(n.bellotas_prom or 0) }}</td>
+          <td class="num">{{ '%.1f' | format(n.monedas_prom or 0) }}</td></tr>
+      {% else %}<tr><td colspan="6" class="muted">Sin datos.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="tarjeta">
+    <h2>Depredador y tienda</h2>
+    {% set pd = pct(depredador.aciertos, depredador.encuentros) %}
+    <div class="barra">
+      <span class="lbl">Aciertos</span>
+      <span class="pista"><span class="relleno" style="width: {{ pd }}%"></span></span>
+      <span class="val">{{ pd }}% <small class="muted">({{ depredador.aciertos }}/{{ depredador.encuentros }})</small></span>
+    </div>
+    <p>Dinero robado por depredadores: <b class="mal-txt">${{ depredador.robado }}</b></p>
+    <table class="tabla">
+      <thead><tr><th>Protección comprada</th><th class="num">Veces</th><th class="num">Gastado</th></tr></thead>
+      <tbody>
+      {% for c in compras %}
+        <tr><td>{{ c.nombre }}</td><td class="num">{{ c.veces }}</td><td class="num">${{ c.gastado }}</td></tr>
+      {% else %}<tr><td colspan="3" class="muted">Nadie ha comprado protección todavía.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </section>
+</div>
+
+<section class="tarjeta">
+  <h2>Eventos por tipo</h2>
+  <div class="chips">
+    {% for t in tipos %}<span class="chip">{{ t.tipo }} · {{ t.cantidad }}</span>{% endfor %}
+  </div>
+</section>
+{% endblock %}

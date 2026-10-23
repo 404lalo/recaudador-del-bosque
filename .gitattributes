@@ -1,0 +1,16 @@
+# Saltos de línea normalizados (Windows y Linux trabajan igual)
+* text=auto eol=lf
+*.bat text eol=crlf
+
+# Binarios: nunca tocar
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.glb binary
+*.bin binary
+*.wav binary
+*.ogg binary
+*.mp3 binary
+*.ttf binary
+*.otf binary

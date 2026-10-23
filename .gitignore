@@ -1,0 +1,21 @@
+# Godot (caché e importaciones, se regeneran solas al abrir el proyecto)
+.godot/
+*.tmp
+/android/
+/build/
+/exports/
+
+# Servidor Python
+server/__pycache__/
+server/venv/
+server/.venv/
+# Bases de datos: tienen datos de los jugadores (perfiles). NO se suben.
+server/*.db
+server/*.db-wal
+server/*.db-shm
+
+# Sistema / editores
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/

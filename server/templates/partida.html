@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block titulo %}Partida de {{ partida.nombre }} · Recaudador del Bosque{% endblock %}
+
+{% macro describir(e) -%}
+  {%- set d = e.datos -%}
+  {%- if e.tipo == 'partida_inicio' -%} Inició una nueva partida
+  {%- elif e.tipo == 'nivel_inicio' -%} Entró a <b>{{ d.nivel_nombre }}</b> con ${{ d.dinero_entrada }}
+  {%- elif e.tipo == 'nivel_fin' -%} Terminó <b>{{ d.nivel_nombre }}</b> en {{ d.duracion_seg | tiempo }} ·
+      pagaron {{ d.animales_pagaron }}, no pagaron {{ d.animales_fallaron }} · {{ d.bellotas }} bellota(s) · {{ d.monedas }} moneda(s)
+  {%- elif e.tipo == 'acertijo' -%} Acertijo de <b>{{ d.animal }}</b>: «{{ d.respuesta }}»
+      {% if d.correcta %}<span class="chip ok">correcta</span>{% else %}<span class="chip mal">incorrecta</span>{% endif %}
+      <span class="muted">intento {{ d.intento }} · {{ '%.1f' | format(d.segundos or 0) }} s</span>
+  {%- elif e.tipo == 'cobro' -%}
+      {% if d.pagado %}Cobró <b class="oro">${{ d.pagado }}</b> a <b>{{ d.animal }}</b> (impuesto ${{ d.impuesto }})
+      {% else %}<b>{{ d.animal }}</b> no pagó{% endif %}
+  {%- elif e.tipo == 'cobro_pospuesto' -%} Dejó a <b>{{ d.animal }}</b> para más tarde
+  {%- elif e.tipo == 'depredador' -%} El <b>{{ d.depredador }}</b> preguntó «{{ d.pregunta }}» → «{{ d.respuesta }}»
+      {% if d.correcta %}<span class="chip ok">acertó</span>{% else %}<span class="chip mal">falló</span>
+      {% if d.perdida %}<span class="muted">le robó ${{ d.perdida }}</span>{% endif %}{% endif %}
+  {%- elif e.tipo == 'compra' -%} Compró <b>{{ d.nombre }}</b> por ${{ d.costo }}
+  {%- elif e.tipo == 'bellota' -%} Encontró una <b>bellota dorada</b> ({{ d.en_nivel }}/{{ d.total_nivel }} en el nivel)
+  {%- elif e.tipo == 'moneda' -%} Moneda <span class="oro">+${{ d.valor }}</span>{% if d.bonus %} <span class="chip ok">BONUS</span>{% endif %}
+  {%- elif e.tipo == 'partida_fin' -%} <b>¡Completó el recorrido!</b>
+  {%- else -%} {{ e.tipo }} <code>{{ d | tojson }}</code>
+  {%- endif -%}
+{%- endmacro %}
+
+{% block contenido %}
+<p class="migas"><a href="/jugadores/{{ partida.jugador_id }}">← {{ partida.nombre }}</a></p>
+<h1>Partida de {{ partida.nombre }}</h1>
+<p class="sub">{{ partida.inicio | fecha }}{% if partida.fin %} → {{ partida.fin | fecha }}{% endif %}
+  · {% if partida.completada %}<span class="chip ok">Completada</span>{% else %}<span class="chip">En curso / abandonada</span>{% endif %}</p>
+
+<div class="kpis">
+  <div class="kpi"><span>Total recaudado</span><b class="oro">${{ partida.total_recaudado }}</b></div>
+  <div class="kpi"><span>Dinero en mano</span><b>${{ partida.dinero }}</b></div>
+  <div class="kpi"><span>Tiempo jugado</span><b>{{ partida.tiempo_seg | tiempo }}</b></div>
+  <div class="kpi"><span>Bellotas</span><b>{{ partida.bellotas }}</b></div>
+  <div class="kpi"><span>Monedas</span><b>{{ partida.monedas }}</b></div>
+</div>
+
+<h2>Niveles</h2>
+<div class="tarjeta">
+<table class="tabla">
+  <thead><tr><th>Nivel</th><th class="num">Duración</th><th class="num">$ entrada</th><th class="num">$ salida</th>
+    <th class="num">Pagaron</th><th class="num">No pagaron</th><th class="num">Bellotas</th><th class="num">Monedas</th><th></th></tr></thead>
+  <tbody>
+  {% for n in niveles %}
+    <tr>
+      <td>{{ n.nivel_nombre }}</td>
+      <td class="num">{% if n.fin %}{{ n.duracion_seg | tiempo }}{% else %}<span class="muted">sin terminar</span>{% endif %}</td>
+      <td class="num">${{ n.dinero_entrada or 0 }}</td>
+      <td class="num">{% if n.fin %}${{ n.dinero_salida }}{% else %}—{% endif %}</td>
+      <td class="num">{{ n.animales_pagaron if n.fin else '—' }}</td>
+      <td class="num">{{ n.animales_fallaron if n.fin else '—' }}</td>
+      <td class="num">{{ n.bellotas if n.fin else '—' }}</td>
+      <td class="num">{{ n.monedas if n.fin else '—' }}</td>
+      <td>{% if n.plano %}<a class="ver" href="/recorridos/{{ n.id }}">Ver recorrido →</a>{% endif %}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="9" class="muted">Sin niveles registrados.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<h2>Línea de tiempo <small class="muted">({{ eventos | length }} eventos)</small></h2>
+<label class="toggle"><input type="checkbox" id="ocultar-monedas" checked> Ocultar monedas sueltas</label>
+<ol class="timeline" id="timeline">
+  {% for e in eventos %}
+  <li class="ev ev-{{ e.tipo }}">
+    <span class="t">{{ e.tiempo_juego | tiempo }}</span>
+    <span class="punto"></span>
+    <span class="txt">{{ describir(e) }}</span>
+  </li>
+  {% endfor %}
+</ol>
+<script>
+  const cb = document.getElementById('ocultar-monedas');
+  const tl = document.getElementById('timeline');
+  const aplicar = () => tl.classList.toggle('sin-monedas', cb.checked);
+  cb.addEventListener('change', aplicar); aplicar();
+</script>
+{% endblock %}

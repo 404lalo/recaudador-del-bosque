@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block titulo %}Audiencia · Recaudador del Bosque{% endblock %}
+{% block contenido %}
+<h1>Audiencia</h1>
+<p class="sub">Quién juega, cuándo y desde dónde. El perfil es opcional y se pide por rangos al iniciar una partida.</p>
+
+<div class="kpis">
+  <div class="kpi"><span>Jugadores registrados</span><b>{{ demo.total }}</b></div>
+  <div class="kpi"><span>Partidas</span><b>{{ act.total_partidas }}</b></div>
+  <div class="kpi"><span>Hora pico</span><b>{% if act.hora_pico is not none %}{{ '%02d' | format(act.hora_pico) }}:00{% else %}—{% endif %}</b></div>
+  <div class="kpi"><span>Jugadores (últimos {{ dias }} días)</span><b>{{ act.serie | sum(attribute='jugadores') }}</b></div>
+</div>
+
+<section class="tarjeta">
+  <div class="cab">
+    <div><h2>Jugadores por día</h2><p class="muted">Jugadores distintos que iniciaron al menos una partida.</p></div>
+    <div class="tabs chicas">
+      <a href="?dias=14" class="{{ 'activo' if dias == 14 }}">14 días</a>
+      <a href="?dias=30" class="{{ 'activo' if dias == 30 }}">30 días</a>
+    </div>
+  </div>
+  <div class="columnas dias">
+    {% for d in act.serie %}
+      <div class="col" data-tip="{{ d.fecha }} · {{ d.jugadores }} jugador(es) · {{ d.partidas }} partida(s)">
+        <span class="area"><span class="barra-v" style="height: {{ pct(d.jugadores, act.max_dia) }}%"></span></span>
+        <span class="eje">{{ d.fecha if loop.index0 % (2 if dias == 14 else 4) == 0 or loop.last else '' }}</span>
+      </div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="tarjeta">
+  <h2>¿A qué hora juegan?</h2>
+  <p class="muted">Partidas iniciadas por día de la semana y hora (todas las fechas).</p>
+  <div class="calor-tabla">
+    <div class="fila"><span class="dia"></span>{% for h in range(24) %}<span class="hora">{{ h if h % 3 == 0 else '' }}</span>{% endfor %}</div>
+    {% for fila in act.calor %}
+      <div class="fila">
+        <span class="dia">{{ act.dias_semana[loop.index0] }}</span>
+        {% set d = act.dias_semana[loop.index0] %}
+        {% for n in fila %}
+          <span class="celda" style="--a: {{ (n / act.max_calor) if n else 0 }}"
+                data-tip="{{ d }} {{ '%02d' | format(loop.index0) }}:00 · {{ n }} partida(s)"></span>
+        {% endfor %}
+      </div>
+    {% endfor %}
+  </div>
+  <div class="leyenda-calor"><span>Menos</span><span class="grad"></span><span>Más</span></div>
+</section>
+
+<div class="grid2">
+  {% for campo, titulo in [('edad', 'Edad'), ('sexo', 'Sexo'), ('lugar', 'Lugar (estado)'), ('ingresos', 'Ingresos mensuales')] %}
+  <section class="tarjeta">
+    <h2>{{ titulo }}</h2>
+    {% set lista = demo[campo] %}
+    {% set maximo = (lista | map(attribute='jugadores') | max) if lista else 1 %}
+    {% for g in lista[:10] %}
+      <div class="barra" data-tip="{{ g.grupo }} · {{ g.jugadores }} jugador(es)">
+        <span class="lbl" title="{{ g.grupo }}">{{ g.grupo }}</span>
+        <span class="pista"><span class="relleno" style="width: {{ pct(g.jugadores, maximo) }}%"></span></span>
+        <span class="val">{{ g.jugadores }} <small class="muted">({{ pct(g.jugadores, demo.total) }}%)</small></span>
+      </div>
+    {% else %}<p class="muted">Sin datos.</p>{% endfor %}
+    {% if lista %}
+    <table class="tabla compacta">
+      <thead><tr><th>{{ titulo }}</th><th class="num">Mejor $ prom.</th><th class="num">Nivel prom.</th>
+        <th class="num">% acierto</th></tr></thead>
+      <tbody>
+      {% for g in lista[:10] %}
+        <tr><td>{{ g.grupo }}</td><td class="num">${{ g.mejor_prom }}</td><td class="num">{{ g.nivel_prom }}</td>
+          <td class="num">{{ (g.acierto ~ '%') if g.acierto is not none else '—' }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </section>
+  {% endfor %}
+</div>
+{% endblock %}

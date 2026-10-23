@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block titulo %}Leaderboard · Recaudador del Bosque{% endblock %}
+{% block contenido %}
+<h1>Leaderboard</h1>
+<div class="tabs">
+  {% for clave, titulo in criterios.items() %}
+    <a href="/?criterio={{ clave }}" class="{{ 'activo' if clave == criterio }}">{{ titulo }}</a>
+  {% endfor %}
+</div>
+
+{% if top %}
+<div class="tarjeta">
+<table class="tabla">
+  <thead>
+    <tr><th>#</th><th>Jugador</th><th class="num">Recaudado</th><th class="num">Bellotas</th>
+        <th class="num">Monedas</th><th class="num">Tiempo</th><th>Avance</th><th></th></tr>
+  </thead>
+  <tbody>
+  {% for f in top %}
+    <tr class="{{ 'podio podio-' ~ loop.index if loop.index <= 3 }}">
+      <td class="pos">{{ loop.index }}</td>
+      <td><a href="/jugadores/{{ f.jugador_id }}">{{ f.nombre }}</a></td>
+      <td class="num oro">${{ f.total_recaudado }}</td>
+      <td class="num">{{ f.bellotas }}</td>
+      <td class="num">{{ f.monedas }}</td>
+      <td class="num">{{ f.tiempo_seg | tiempo }}</td>
+      <td>{% if f.completada %}<span class="chip ok">Completado</span>
+          {% else %}<span class="chip">{{ NIVELES.get(f.nivel_max, 'Nivel ' ~ f.nivel_max) }}</span>{% endif %}</td>
+      <td><a class="ver" href="/partidas/{{ f.id }}">Ver partida →</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<div class="vacio">Aún no hay partidas. Abre el juego, inicia una <b>Nueva partida</b> y juega un poco.</div>
+{% endif %}
+{% endblock %}

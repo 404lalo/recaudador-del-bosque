@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% block titulo %}Recorrido de {{ nivel.jugador }} · Recaudador del Bosque{% endblock %}
+{% block contenido %}
+<p class="migas"><a href="/partidas/{{ nivel.partida_id }}">← Partida de {{ nivel.jugador }}</a> · <a href="/mapas?nivel={{ nivel.nivel_idx }}">Mapa de calor del nivel</a></p>
+
+<section class="tarjeta mapa-tarjeta">
+  <div class="cab">
+    <div>
+      <p class="sobre">CARTOGRAFÍA DEL RECORRIDO</p>
+      <h2 class="titulo-mapa">Por dónde caminó {{ nivel.jugador }}</h2>
+      <p class="muted">Nivel {{ nivel.nivel_idx + 1 }} · {{ nivel.nivel_nombre }} · Intento {{ intento }}
+        · {% if nivel.fin %}<span class="chip ok">Terminado</span>{% else %}<span class="chip">Sin terminar</span>{% endif %}</p>
+    </div>
+    <div class="controles">
+      <button type="button" onclick="M && M.zoom(1/1.3)">+</button>
+      <button type="button" onclick="M && M.zoom(1.3)">−</button>
+      <button type="button" onclick="M && M.ajustar()">Ajustar vista</button>
+    </div>
+  </div>
+
+  {% if nivel.plano and puntos %}
+  <div class="opciones">
+    <label class="toggle"><input type="checkbox" id="ver-animales" checked> Mostrar animales</label>
+    <label class="toggle"><input type="checkbox" id="ver-eventos" checked> Mostrar acciones</label>
+    <label class="toggle"><input type="checkbox" id="ver-ruta" checked> Ruta completa (tenue)</label>
+  </div>
+  <svg id="mapa" class="mapa"></svg>
+
+  <div class="leyenda">
+    <span><i class="lg inicio"></i> Inicio</span>
+    <span><i class="lg ruta"></i> Recorrido</span>
+    <span><i class="lg jugador"></i> Jugador</span>
+    <span><i class="lg pago"></i> Pagó</span>
+    <span><i class="lg nopago"></i> No pagó</span>
+    <span><i class="lg pendiente"></i> Pendiente</span>
+    <span><i class="lg bellota"></i> Bellota</span>
+    <span><i class="lg accion"></i> Acción</span>
+    <span class="muted" id="contador"></span>
+  </div>
+  <div class="estado-linea" id="estado"></div>
+
+  <div class="reproductor">
+    <button type="button" id="play" class="play" aria-label="Reproducir">▶</button>
+    <span id="t-actual" class="t">0:00</span>
+    <input type="range" id="slider" min="0" step="0.1" value="0">
+    <span id="t-total" class="t">0:00</span>
+    <select id="velocidad" aria-label="Velocidad">
+      <option value="1">×1</option><option value="4" selected>×4</option><option value="10">×10</option>
+    </select>
+    <button type="button" id="final">Ir al final</button>
+  </div>
+  <ol class="bitacora" id="bitacora"></ol>
+  {% else %}
+    <div class="vacio">Este intento no tiene posiciones registradas (se jugó antes de agregar el mapa).</div>
+  {% endif %}
+</section>
+{% endblock %}
+
+{% block scripts %}
+{% if nivel.plano and puntos %}
+<script>
+  const PUNTOS = {{ puntos | tojson }};
+  const EVENTOS = ({{ eventos | tojson }}).filter(e => e.t != null);
+  const M = crearMapa(document.getElementById("mapa"), {{ nivel.plano | tojson }});
+  const fmt = s => { s = Math.max(0, Math.floor(s)); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); };
+
+  // Ruta completa tenue + ruta recorrida hasta el momento.
+  const pts = PUNTOS.map(([t, x, z]) => M.P(x, z));
+  const completa = M.el("polyline", { points: pts.map(p => p.join(",")).join(" "), class: "m-ruta-tenue" }, M.capas.ruta);
+  const ruta = M.el("polyline", { points: "", class: "m-ruta" }, M.capas.ruta);
+  const jugador = M.el("circle", { r: 0.8, class: "m-jugador" }, M.capas.jugador);
+  jugador.dataset.tip = "Jugador";
+
+  // Marcas de acciones.
+  const DESC = {
+    cobro: e => e.datos.pagado ? `Cobró $${e.datos.pagado} a ${e.datos.animal}` : `${e.datos.animal} no pagó`,
+    cobro_pospuesto: e => `Dejó a ${e.datos.animal} para después`,
+    acertijo: e => `Acertijo de ${e.datos.animal}: «${e.datos.respuesta}» (${e.datos.correcta ? "correcta" : "incorrecta"})`,
+    bellota: e => `Encontró una bellota (${e.datos.en_nivel}/${e.datos.total_nivel})`,
+    moneda: e => `Moneda +$${e.datos.valor}`,
+    depredador: e => `${e.datos.depredador}: ${e.datos.correcta ? "acertó" : "falló"}${e.datos.perdida ? " y le robó $" + e.datos.perdida : ""}`,
+    compra: e => `Compró ${e.datos.nombre} ($${e.datos.costo})`,
+    nivel_inicio: e => "Entró al nivel",
+    nivel_fin: e => "Terminó el nivel",
+    nivel_reinicio: e => "Reinició la zona",
+    salida_menu: e => "Salió al menú",
+  };
+  const ICONO = { cobro: "$", acertijo: "?", bellota: "★", depredador: "!", compra: "+", moneda: "¢", nivel_fin: "⚑", salida_menu: "⏏", nivel_reinicio: "↺", cobro_pospuesto: "…" };
+  const marcas = [];
+  for (const e of EVENTOS) {
+    if (e.x == null || !ICONO[e.tipo]) continue;
+    if (e.tipo === "moneda" && !e.datos.bonus) continue;  // solo las monedas BONUS, para no saturar
+    const [cx, cy] = M.P(e.x, e.z);
+    const malo = (e.tipo === "acertijo" && !e.datos.correcta) || (e.tipo === "depredador" && !e.datos.correcta) || (e.tipo === "cobro" && !e.datos.pagado);
+    const g = M.el("g", { class: "m-accion" + (malo ? " mala" : "") }, M.capas.eventos);
+    M.el("circle", { cx, cy, r: 0.75 }, g);
+    M.el("text", { x: cx, y: cy + 0.38, "text-anchor": "middle" }, g).textContent = ICONO[e.tipo];
+    g.dataset.tip = `${fmt(e.t)} · ${(DESC[e.tipo] || (x => x.tipo))(e)}`;
+    marcas.push({ t: e.t, g });
+  }
+
+  // Bitácora (lista de acciones).
+  const bit = document.getElementById("bitacora");
+  const filas = EVENTOS.filter(e => DESC[e.tipo] && !(e.tipo === "moneda" && !e.datos.bonus)).map(e => {
+    const li = document.createElement("li");
+    li.innerHTML = `<span class="t">${fmt(e.t)}</span><span>${DESC[e.tipo](e)}</span>`;
+    li.onclick = () => ir(e.t);
+    bit.appendChild(li);
+    return { t: e.t, li };
+  });
+
+  const total = Math.max(PUNTOS.length ? PUNTOS[PUNTOS.length - 1][0] : 0, ...EVENTOS.map(e => e.t || 0));
+  const slider = document.getElementById("slider");
+  slider.max = total.toFixed(1);
+  document.getElementById("t-total").textContent = fmt(total);
+  document.getElementById("contador").textContent = `${PUNTOS.length} posiciones del jugador`;
+
+  function posicion(t) {
+    if (!PUNTOS.length) return [0, 0];
+    let i = PUNTOS.findIndex(p => p[0] > t);
+    if (i === -1) return M.P(PUNTOS[PUNTOS.length - 1][1], PUNTOS[PUNTOS.length - 1][2]);
+    if (i === 0) return M.P(PUNTOS[0][1], PUNTOS[0][2]);
+    const a = PUNTOS[i - 1], b = PUNTOS[i], k = (t - a[0]) / Math.max(0.001, b[0] - a[0]);
+    return M.P(a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k);
+  }
+
+  function dibujar(t) {
+    const hechos = PUNTOS.filter(p => p[0] <= t).map(([_, x, z]) => M.P(x, z));
+    const yo = posicion(t);
+    ruta.setAttribute("points", hechos.concat([yo]).map(p => p.join(",")).join(" "));
+    jugador.setAttribute("cx", yo[0]); jugador.setAttribute("cy", yo[1]);
+    for (const m of marcas) m.g.style.display = m.t <= t ? "" : "none";
+    for (const f of filas) f.li.classList.toggle("hecho", f.t <= t);
+    // Estado de cada animal y bellota en ese momento.
+    let pagaron = 0, total_a = 0, bell = 0;
+    for (const nombre in M.animales) {
+      total_a++;
+      const ult = EVENTOS.filter(e => e.tipo === "cobro" && e.datos.animal === nombre && e.t <= t).pop();
+      const g = M.animales[nombre];
+      g.classList.toggle("pago", !!(ult && ult.datos.pagado));
+      g.classList.toggle("nopago", !!(ult && !ult.datos.pagado));
+      if (ult && ult.datos.pagado) pagaron++;
+    }
+    const encontradas = new Set(EVENTOS.filter(e => e.tipo === "bellota" && e.t <= t).map(e => e.datos.id));
+    for (const id in M.bellotas) { M.bellotas[id].classList.toggle("encontrada", encontradas.has(id)); }
+    bell = encontradas.size;
+    const ult = EVENTOS.filter(e => e.t <= t && DESC[e.tipo] && e.tipo !== "moneda").pop();
+    document.getElementById("estado").innerHTML =
+      `<b>${pagaron}/${total_a}</b> animales pagaron · <b>${bell}/${Object.keys(M.bellotas).length}</b> bellotas` +
+      (ult ? ` · Última acción: <span class="muted">${DESC[ult.tipo](ult)}</span>` : "");
+    document.getElementById("t-actual").textContent = fmt(t);
+    slider.value = t;
+  }
+
+  let t = 0, jugando = false, ultimo = 0;
+  const play = document.getElementById("play");
+  function ir(nuevo) { t = Math.min(total, Math.max(0, nuevo)); dibujar(t); }
+  function paso(ts) {
+    if (!jugando) return;
+    const dt = (ts - ultimo) / 1000; ultimo = ts;
+    t += dt * Number(document.getElementById("velocidad").value);
+    if (t >= total) { t = total; jugando = false; play.textContent = "▶"; }
+    dibujar(t);
+    if (jugando) requestAnimationFrame(paso);
+  }
+  play.onclick = () => {
+    jugando = !jugando;
+    play.textContent = jugando ? "❚❚" : "▶";
+    if (jugando) { if (t >= total) t = 0; ultimo = performance.now(); requestAnimationFrame(paso); }
+  };
+  slider.oninput = () => ir(Number(slider.value));
+  document.getElementById("final").onclick = () => ir(total);
+  document.getElementById("ver-animales").onchange = ev => { M.capas.objetos.querySelectorAll(".m-animal").forEach(a => a.style.display = ev.target.checked ? "" : "none"); };
+  document.getElementById("ver-eventos").onchange = ev => { M.capas.eventos.style.display = ev.target.checked ? "" : "none"; };
+  document.getElementById("ver-ruta").onchange = ev => { completa.style.display = ev.target.checked ? "" : "none"; };
+  ir(0);
+</script>
+{% endif %}
+{% endblock %}

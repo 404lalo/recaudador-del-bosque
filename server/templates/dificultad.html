@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block titulo %}Dificultad · Recaudador del Bosque{% endblock %}
+{% block contenido %}
+<h1>Dificultad por nivel</h1>
+<p class="sub">¿La curva de dificultad que diseñamos se siente así en el juego real?</p>
+
+<div class="tabs">
+  {% for clave, info in metricas.items() %}
+    <a href="?m={{ clave }}" class="{{ 'activo' if clave == m }}">{{ info[0] }}</a>
+  {% endfor %}
+</div>
+
+<section class="tarjeta">
+  <h2>{{ metricas[m][0] }}</h2>
+  <p class="muted">{{ metricas[m][1] }}</p>
+  <div class="columnas niveles">
+    {% for f in filas %}
+      {% set v = f[m] %}
+      {% if v is none %}{% set txt = 'sin datos' %}
+      {% elif m == 'tiempo' %}{% set txt = v | minutos %}
+      {% elif m == 'reinicios' %}{% set txt = '%.2f' | format(v) %}
+      {% elif m == 'indice' %}{% set txt = v %}
+      {% else %}{% set txt = v | round | int ~ '%' %}{% endif %}
+      <div class="col" data-tip="{{ f.nivel }} · {{ txt }} · {{ f.intentos }} intento(s), {{ f.terminados }} terminado(s)">
+        <span class="num-nivel">{{ f.num }}</span>
+        <span class="area"><span class="barra-v {{ 'vacia' if v is none }}" style="height: {{ pct(v or 0, maximo) if v is not none else 2 }}%"></span></span>
+        <span class="eje">{{ f.nivel }}</span>
+        <span class="v abajo">{{ txt }}</span>
+      </div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="tarjeta">
+  <h2>Tabla completa</h2>
+  <table class="tabla compacta">
+    <thead><tr><th>#</th><th>Nivel</th><th class="num">Intentos</th><th class="num">Terminados</th>
+      <th class="num">Abandono</th><th class="num">Acierto acertijos</th><th class="num">Acierto depredador</th>
+      <th class="num">Tiempo prom.</th><th class="num">Reinicios</th><th class="num">Índice</th><th></th></tr></thead>
+    <tbody>
+    {% for f in filas %}
+      <tr>
+        <td class="pos">{{ f.num }}</td><td>{{ f.nivel }}</td>
+        <td class="num">{{ f.intentos }}</td><td class="num">{{ f.terminados }}</td>
+        <td class="num">{{ (f.abandono | round | int ~ '%') if f.abandono is not none else '—' }}</td>
+        <td class="num">{{ (f.acierto | round | int ~ '%') if f.acierto is not none else '—' }}</td>
+        <td class="num">{{ (f.trivia | round | int ~ '%') if f.trivia is not none else '—' }}</td>
+        <td class="num">{{ f.tiempo | tiempo if f.tiempo else '—' }}</td>
+        <td class="num">{{ ('%.2f' | format(f.reinicios)) if f.reinicios is not none else '—' }}</td>
+        <td class="num oro">{{ f.indice if f.indice is not none else '—' }}</td>
+        <td><a class="ver" href="/mapas?nivel={{ f.idx }}">Mapa →</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted nota">Índice = 35 % abandono + 35 % fallos en acertijos + 15 % fallos con el depredador + 15 % tiempo (10 min = máximo).</p>
+</section>
+{% endblock %}

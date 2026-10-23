@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block titulo %}Recaudador del Bosque{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/mapa.js"></script>
+</head>
+<body>
+  <header class="top">
+    <a class="marca" href="/">
+      <span class="moneda">$</span>
+      <span><small>4TNATURE</small>Recaudador del Bosque</span>
+    </a>
+    <nav>
+      <a href="/" class="{{ 'activo' if seccion == 'leaderboard' }}">Leaderboard</a>
+      <a href="/jugadores" class="{{ 'activo' if seccion == 'jugadores' }}">Jugadores</a>
+      <a href="/audiencia" class="{{ 'activo' if seccion == 'audiencia' }}">Audiencia</a>
+      <a href="/dificultad" class="{{ 'activo' if seccion == 'dificultad' }}">Dificultad</a>
+      <a href="/mapas" class="{{ 'activo' if seccion == 'mapas' }}">Mapas</a>
+      <a href="/estadisticas" class="{{ 'activo' if seccion == 'estadisticas' }}">Estadísticas</a>
+      <a href="/docs" target="_blank">API</a>
+    </nav>
+  </header>
+  <main>
+    {% block contenido %}{% endblock %}
+  </main>
+  <footer>Datos guardados en SQLite · servidor FastAPI</footer>
+{% block scripts %}{% endblock %}
+</body>
+</html>
