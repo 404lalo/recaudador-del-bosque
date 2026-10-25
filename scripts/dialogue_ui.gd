@@ -73,12 +73,25 @@ func _add_button(txt: String, cb: Callable, disabled := false) -> void:
 	var b := Button.new()
 	b.text = txt
 	b.disabled = disabled
+	if disabled:
+		b.focus_mode = Control.FOCUS_NONE  # las flechas se saltan la opción ya fallada
 	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	b.add_theme_font_size_override("font_size", 18)
 	b.pressed.connect(cb)
 	opts.add_child(b)
-	if opts.get_child_count() == 1 and not disabled:
-		b.grab_focus.call_deferred()  # Espacio/Enter activan el primer botón
+	# El primer botón habilitado recibe el foco: así Espacio/Enter y las flechas funcionan
+	# aunque la opción de arriba ya esté deshabilitada (por ejemplo, tras fallar).
+	if not disabled and not _has_enabled_before(b):
+		b.grab_focus.call_deferred()
+
+
+func _has_enabled_before(b: Button) -> bool:
+	for c in opts.get_children():
+		if c == b:
+			return false
+		if c is Button and not c.disabled:
+			return true
+	return false
 
 
 ## Muestra el acertijo. Tienes 2 intentos: acertar al primero paga el impuesto completo, al segundo el 60 %.
@@ -111,6 +124,7 @@ func _answer(i: int) -> void:
 		_add_button("Continuar", _finish.bind(paid, true, false))
 	else:
 		disabled_options.append(i)
+		Game.shake(0.55)
 		if disabled_options.size() >= 2:
 			_clear_opts()
 			var right: String = riddle.options[riddle.correct]

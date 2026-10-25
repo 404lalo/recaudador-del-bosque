@@ -205,6 +205,7 @@ const SETTINGS_PATH := "user://settings.cfg"
 
 
 func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS  # F12 funciona también con el juego en pausa
 	_setup_input()
 	_load_settings()
 	_migrate_old_save()
@@ -214,6 +215,53 @@ func _ready() -> void:
 	for arg in OS.get_cmdline_user_args():  # godot --path . scenes/level.tscn -- --level=5
 		if arg.begins_with("--level="):
 			level_index = clampi(int(arg.substr(8)) - 1, 0, LEVELS.size() - 1)
+
+
+# --- Capturas de pantalla (F12) ---
+# Se guardan en Imágenes\4TNature (Windows: C:\Users\<tú>\Pictures\4TNature).
+
+func _input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F12:
+		take_screenshot()
+
+
+func take_screenshot() -> void:
+	var img := get_viewport().get_texture().get_image()  # el cuadro tal cual se ve ahora
+	var dir := OS.get_system_dir(OS.SYSTEM_DIR_PICTURES).path_join("4TNature")
+	DirAccess.make_dir_recursive_absolute(dir)
+	var stamp := Time.get_datetime_string_from_system().replace(":", "-").replace("T", "_")
+	var path := dir.path_join("captura_%s_%03d.png" % [stamp, Time.get_ticks_msec() % 1000])
+	if img.save_png(path) != OK:
+		push_warning("No se pudo guardar la captura en " + path)
+		return
+	print("Captura guardada: ", path)
+	Sfx.play("click", 1.6)
+	_screenshot_notice(dir)
+
+
+func _screenshot_notice(dir: String) -> void:
+	var layer := CanvasLayer.new()
+	layer.layer = 100
+	layer.process_mode = Node.PROCESS_MODE_ALWAYS
+	var flash := ColorRect.new()
+	flash.color = Color(1, 1, 1, 0.35)
+	flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	flash.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	layer.add_child(flash)
+	var lbl := Label.new()
+	lbl.text = "Captura guardada en %s" % dir
+	lbl.add_theme_font_size_override("font_size", 16)
+	lbl.add_theme_color_override("font_outline_color", Color.BLACK)
+	lbl.add_theme_constant_override("outline_size", 6)
+	lbl.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
+	lbl.position += Vector2(16, -40)
+	layer.add_child(lbl)
+	get_tree().root.add_child(layer)
+	var tw := layer.create_tween()
+	tw.tween_property(flash, "color:a", 0.0, 0.25)
+	tw.tween_interval(1.5)
+	tw.tween_property(lbl, "modulate:a", 0.0, 0.5)
+	tw.tween_callback(layer.queue_free)
 
 
 func reset() -> void:
@@ -243,6 +291,11 @@ func snapshot() -> Dictionary:
 		"x": snappedf(player_pos.x, 0.01),
 		"z": snappedf(player_pos.y, 0.01),
 	}
+
+
+## Sacude la cámara del jugador (0.0 - 1.0). Se puede llamar desde cualquier script.
+func shake(amount: float) -> void:
+	get_tree().call_group("player", "add_trauma", amount)
 
 
 func add_money(amount: int) -> void:

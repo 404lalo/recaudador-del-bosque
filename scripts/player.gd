@@ -12,6 +12,11 @@ const MOUSE_SENS := 0.003
 const CAM_DISTANCE := 5.5
 const PITCH_MIN := -1.2   # mirando hacia abajo
 const PITCH_MAX := 0.35   # mirando hacia arriba
+# Screenshake: "trauma" de 0 a 1 que se va desvaneciendo; la vibración es trauma².
+const SHAKE_DECAY := 1.1       # cuánto trauma se pierde por segundo
+const SHAKE_MAX_OFFSET := 0.9  # desplazamiento máximo de la cámara (metros)
+const SHAKE_MAX_ROLL := 0.12   # inclinación máxima (radianes)
+const HARD_LANDING := 10.0     # velocidad de caída a partir de la cual el aterrizaje sacude
 
 var locked := false:
 	set(v):
@@ -29,9 +34,16 @@ var jump_buffer := 0.0
 var air_jumps := 1
 var was_on_floor := true
 var step_timer := 0.0
+var fall_speed := 0.0
+var trauma := 0.0
+var shake_time := 0.0
+var noise := FastNoiseLite.new()
 
 
 func _ready() -> void:
+	add_to_group("player")
+	noise.seed = randi()
+	noise.frequency = 2.0
 	_build_body()
 	pivot = Node3D.new()
 	pivot.position = Vector3(0, 1.6, 0)
@@ -117,9 +129,12 @@ func _physics_process(delta: float) -> void:
 		air_jumps = 1
 		if not was_on_floor:
 			Sfx.play("land", 1.0, -6.0)
+			if fall_speed > HARD_LANDING:  # aterrizaje fuerte
+				add_trauma(clampf((fall_speed - HARD_LANDING) / 10.0, 0.4, 0.8))
 	else:
 		coyote = maxf(0.0, coyote - delta)
 		velocity.y -= GRAVITY * delta
+		fall_speed = maxf(0.0, -velocity.y)
 	jump_buffer = maxf(0.0, jump_buffer - delta)
 	var dir := Vector3.ZERO
 	if not locked:
@@ -160,3 +175,22 @@ func _physics_process(delta: float) -> void:
 	was_on_floor = on_floor
 	move_and_slide()
 
+
+## Agrega vibración de cámara (0.0 - 1.0). Se suma y se desvanece sola.
+func add_trauma(amount: float) -> void:
+	trauma = clampf(trauma + amount, 0.0, 1.0)
+
+
+func _process(delta: float) -> void:
+	if trauma <= 0.0:
+		return
+	trauma = maxf(0.0, trauma - SHAKE_DECAY * delta)
+	shake_time += delta * 30.0
+	var k := pow(trauma, 1.5)
+	camera.h_offset = SHAKE_MAX_OFFSET * k * noise.get_noise_2d(shake_time, 0.0)
+	camera.v_offset = SHAKE_MAX_OFFSET * k * noise.get_noise_2d(0.0, shake_time)
+	camera.rotation.z = SHAKE_MAX_ROLL * k * noise.get_noise_2d(shake_time, shake_time)
+	if trauma == 0.0:
+		camera.h_offset = 0.0
+		camera.v_offset = 0.0
+		camera.rotation.z = 0.0

@@ -421,6 +421,7 @@ func _on_predator_zone(body: Node) -> void:
 	wolf.face(player.position)
 	wolf.play("Idle")
 	Sfx.play("growl")
+	Game.shake(0.65)
 	player.locked = true
 	hud.toast("¡Un %s te corta el paso! Responde su pregunta o te robará." % info.predator.to_lower(), 3.0)
 	dialogue.start_trivia(info.predator)
@@ -434,6 +435,7 @@ func _on_predator_zone(body: Node) -> void:
 	else:
 		Sfx.play("bad")
 		wolf.play("Attack")
+		Game.shake(1.0 if Game.money > 0 else 0.7)
 		var loss := int(Game.money * float(info.get("steal", 0.4)) * Game.PROT_LOSS[Game.protection])
 		var taunt: String = Game.PREDATOR_TAUNTS.pick_random()
 		if Game.money == 0:
