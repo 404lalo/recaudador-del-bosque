@@ -50,6 +50,8 @@ func show_panel(title: String, body: String, items: Array) -> void:
 		b.text = it.text
 		b.disabled = it.get("disabled", false)
 		b.add_theme_font_size_override("font_size", 20)
+		if Game.touch_active():
+			b.custom_minimum_size.y = 56
 		b.pressed.connect(it.cb)
 		buttons.add_child(b)
 	visible = true

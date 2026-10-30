@@ -260,7 +260,7 @@ func _build_ui() -> void:
 	col.add_child(tagline)
 
 	var spacer := Control.new()
-	spacer.custom_minimum_size = Vector2(0, 26)
+	spacer.custom_minimum_size = Vector2(0, 12)
 	col.add_child(spacer)
 
 	# Tarjeta con los botones.
@@ -275,23 +275,26 @@ func _build_ui() -> void:
 	cs.shadow_size = 18
 	cs.content_margin_left = 34
 	cs.content_margin_right = 34
-	cs.content_margin_top = 28
-	cs.content_margin_bottom = 28
+	cs.content_margin_top = 20
+	cs.content_margin_bottom = 20
 	card.add_theme_stylebox_override("panel", cs)
 	col.add_child(card)
 	buttons_box = VBoxContainer.new()
-	buttons_box.add_theme_constant_override("separation", 14)
+	buttons_box.add_theme_constant_override("separation", 10)
 	card.add_child(buttons_box)
 
 	_fill_buttons()
 
 	# Controles al pie de la pantalla.
-	var hint := _text("WASD mover   ·   Shift correr   ·   Espacio saltar (doble salto)   ·   E interactuar   ·   Ratón cámara", 16, CREAM)
+	var hint_text := "WASD mover   ·   Shift correr   ·   Q dash   ·   Espacio saltar (doble salto)   ·   E interactuar   ·   Ratón cámara"
+	if Game.touch_active():
+		hint_text = "Joystick mover (a fondo = correr)   ·   SALTAR / DASH / HABLAR   ·   Arrastra a la derecha para mirar"
+	var hint := _text(hint_text, 16, CREAM)
 	hint.modulate.a = 0.85
 	hint.add_theme_constant_override("outline_size", 8)
 	hint.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
-	hint.offset_top = -48
-	hint.offset_bottom = -20
+	hint.offset_top = -34
+	hint.offset_bottom = -8
 	hint.offset_left = -500
 	hint.offset_right = 500
 	add_child(hint)
@@ -319,6 +322,8 @@ func _fill_buttons() -> void:
 	tut.pressed.connect(_play_tutorial)
 	var lb := _menu_button("Leaderboard")
 	lb.pressed.connect(_show_leaderboard.bind("recaudado"))
+	var settings := _menu_button("Ajustes")
+	settings.pressed.connect(_show_settings)
 	var quit := _menu_button("Salir")
 	quit.pressed.connect(_quit)
 	first_button = first
@@ -750,6 +755,11 @@ func _open_modal(title: String) -> VBoxContainer:
 	t.add_theme_constant_override("outline_size", 10)
 	vb.add_child(t)
 	return vb
+
+
+func _show_settings() -> void:
+	var vb := _open_modal("Ajustes")
+	SettingsUI.build(vb, _close_modal)
 
 
 func _close_modal() -> void:

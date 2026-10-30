@@ -19,3 +19,5 @@ server/*.db-shm
 Thumbs.db
 desktop.ini
 .vscode/
+*.apk
+*.apk.idsig

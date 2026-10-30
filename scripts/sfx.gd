@@ -127,11 +127,23 @@ func _mix_into(a: PackedFloat32Array, b: PackedFloat32Array, at: float) -> void:
 		a[start + i] += b[i]
 
 
+## Relleno al final de cada sonido. El mezclador interpola leyendo muestras más allá del punto
+## de bucle/final; sin este margen, en Android leía fuera del búfer y el juego se cerraba
+## (SIGSEGV en el hilo AudioTrack al repetirse la música).
+const PAD := 256
+
+
 func _stream(samples: PackedFloat32Array, loop := false) -> AudioStreamWAV:
+	var n := samples.size()
 	var bytes := PackedByteArray()
-	bytes.resize(samples.size() * 2)
-	for i in samples.size():
-		bytes.encode_s16(i * 2, int(clampf(samples[i], -1.0, 1.0) * 32000.0))
+	bytes.resize((n + PAD) * 2)
+	for i in n + PAD:
+		var v := 0.0
+		if i < n:
+			v = samples[i]
+		elif loop and n > 0:
+			v = samples[(i - n) % n]  # continúa con el inicio: el bucle empalma sin clic
+		bytes.encode_s16(i * 2, int(clampf(v, -1.0, 1.0) * 32000.0))
 	var w := AudioStreamWAV.new()
 	w.format = AudioStreamWAV.FORMAT_16_BITS
 	w.mix_rate = RATE
@@ -140,13 +152,14 @@ func _stream(samples: PackedFloat32Array, loop := false) -> AudioStreamWAV:
 	if loop:
 		w.loop_mode = AudioStreamWAV.LOOP_FORWARD
 		w.loop_begin = 0
-		w.loop_end = samples.size()
+		w.loop_end = n
 	return w
 
 
 func _build_sounds() -> void:
 	sounds["jump"] = _stream(_tone(260, 560, 0.16, 0.22, 1, 0.003, 1.5))
 	sounds["djump"] = _stream(_tone(420, 900, 0.18, 0.2, 2, 0.003, 1.5))
+	sounds["dash"] = _stream(_concat([_tone(900, 260, 0.14, 0.22, 3, 0.002, 1.2), _tone(300, 200, 0.05, 0.1, 3, 0.002, 2.0)]))
 	sounds["land"] = _stream(_tone(160, 80, 0.09, 0.5, 3, 0.002, 1.5))
 	sounds["step"] = _stream(_tone(260, 160, 0.05, 0.35, 3, 0.002, 1.5))
 	sounds["coin"] = _stream(_concat([

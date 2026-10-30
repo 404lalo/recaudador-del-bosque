@@ -65,6 +65,7 @@ func _ready() -> void:
 	hint.offset_bottom = -12
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	add_child(hint)
+	hint.visible = not Game.touch_active()  # en el celular está el botón de pausa
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -94,7 +95,8 @@ func resume() -> void:
 	hint.visible = true
 	get_tree().paused = false
 	if host and is_instance_valid(host.player) and not host.player.locked:
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		Game.capture_mouse(true)
+	hint.visible = not Game.touch_active()
 
 
 # ---------------------------------------------------------------- pantallas
@@ -106,6 +108,7 @@ func _show_main() -> void:
 	box.add_child(info_label)
 	box.add_child(_spacer(6))
 	_first = _button("Continuar", true, resume)
+	_button("Ajustes", false, _show_settings)
 	_button(restart_text, false, _confirm.bind(
 		"¿%s?" % restart_text,
 		"Vuelves al inicio con el dinero que tenías al entrar.",
@@ -114,9 +117,15 @@ func _show_main() -> void:
 		"¿Salir al menú?",
 		"Tu partida queda guardada desde el inicio de esta zona.\nPodrás retomarla con \"Continuar\".",
 		_do_quit))
-	var tip := _text("P o Esc para volver al juego", 14, Color(CREAM, 0.5))
+	var tip := _text("Toca Continuar para volver al juego" if Game.touch_active() else "P o Esc para volver al juego", 14, Color(CREAM, 0.5))
 	box.add_child(tip)
 	_first.grab_focus.call_deferred()
+
+
+func _show_settings() -> void:
+	_clear()
+	box.add_child(_text("Ajustes", 34, GOLD))
+	SettingsUI.build(box, _show_main)
 
 
 func _confirm(title: String, body: String, action: Callable) -> void:

@@ -6,6 +6,7 @@ extends Node
 ## cuando vuelve: el juego nunca se traba por falta de conexión.
 ##
 ## La URL del servidor se configura en res://api_config.cfg  ([api] url="http://...").
+## En el celular se puede cambiar desde Ajustes (se guarda en user://settings.cfg y tiene prioridad).
 
 const CONFIG_PATH := "res://api_config.cfg"
 const QUEUE_PATH := "user://api_queue.json"
@@ -36,6 +37,7 @@ func _ready() -> void:
 	var s := ConfigFile.new()
 	if s.load(SETTINGS_PATH) == OK:
 		player_name = str(s.get_value("player", "name", ""))
+		base_url = str(s.get_value("api", "url", base_url)).strip_edges().trim_suffix("/")
 	_load_queue()
 	_http = HTTPRequest.new()
 	_http.timeout = 6.0
@@ -169,6 +171,39 @@ func fetch_leaderboard(criterio: String, cb: Callable) -> void:
 		req.queue_free())
 	if req.request(base_url + "/api/leaderboard?criterio=" + criterio.uri_encode()) != OK:
 		cb.call(false, [])
+		req.queue_free()
+
+
+# ---------------------------------------------------------------- servidor
+
+## Cambia la URL del servidor (Ajustes) y la guarda.
+func set_server_url(url: String) -> void:
+	url = url.strip_edges().trim_suffix("/")
+	if url == "":
+		return
+	if not url.begins_with("http://") and not url.begins_with("https://"):
+		url = "http://" + url
+	if url.count(":") < 2:  # sin puerto: el servidor usa el 8000
+		url += ":8000"
+	base_url = url
+	var s := ConfigFile.new()
+	s.load(SETTINGS_PATH)
+	s.set_value("api", "url", base_url)
+	s.save(SETTINGS_PATH)
+	_timer = FLUSH_EVERY  # reintenta mandar lo pendiente ya
+
+
+## Comprueba si el servidor responde. cb recibe (ok: bool).
+func ping(cb: Callable) -> void:
+	var req := HTTPRequest.new()
+	req.timeout = 4.0
+	add_child(req)
+	req.request_completed.connect(func(result: int, code: int, _h, _b):
+		online = result == HTTPRequest.RESULT_SUCCESS and code == 200
+		cb.call(online)
+		req.queue_free())
+	if req.request(base_url + "/api/ping") != OK:
+		cb.call(false)
 		req.queue_free()
 
 

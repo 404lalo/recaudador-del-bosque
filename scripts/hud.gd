@@ -14,6 +14,7 @@ var zone_name := ""  # si se define (p. ej. "Tutorial"), reemplaza el nombre del
 
 func _ready() -> void:
 	layer = 5
+	add_to_group("hud")
 	money_label = _label(Vector2(20, 14), 30, Color(1, 0.85, 0.3))
 	info_label = _label(Vector2(20, 56), 18, Color.WHITE)
 	acorn_label = _label(Vector2(20, 82), 18, Color(1.0, 0.72, 0.3))
@@ -39,7 +40,21 @@ func _ready() -> void:
 	toast_label.add_theme_constant_override("outline_size", 8)
 	add_child(toast_label)
 	Game.money_changed.connect(refresh)
+	Game.settings_changed.connect(_layout)
+	get_viewport().size_changed.connect(_layout)
+	_layout()
 	refresh()
+
+
+## Respeta la safe area (notch) y sube el aviso de interacción por encima de los controles táctiles.
+func _layout() -> void:
+	var sm := Game.safe_margins()
+	money_label.position = Vector2(20 + sm.left, 14 + sm.top)
+	info_label.position = Vector2(20 + sm.left, 56 + sm.top)
+	acorn_label.position = Vector2(20 + sm.left, 82 + sm.top)
+	prompt_label.offset_top = (-260 if Game.touch_active() else -120) - sm.bottom
+	prompt_label.offset_bottom = prompt_label.offset_top + 40
+	toast_label.offset_top = (175 if Game.touch_active() else 120) + sm.top
 
 
 func _label(pos: Vector2, size: int, color: Color) -> Label:
@@ -64,7 +79,14 @@ func refresh() -> void:
 
 
 func set_prompt(t: String) -> void:
+	# En táctil no hay tecla E: el botón HABLAR se ilumina (touch_controls.gd lee has_prompt()).
+	if Game.touch_active():
+		t = t.replace("[E] ", "")
 	prompt_label.text = t
+
+
+func has_prompt() -> bool:
+	return prompt_label.text != ""
 
 
 func toast(t: String, secs := 3.5) -> void:

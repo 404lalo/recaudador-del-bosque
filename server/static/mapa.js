@@ -93,16 +93,41 @@ function crearMapa(svg, plano) {
     const [x, y] = punto(ev);
     zoom(ev.deltaY > 0 ? 1.15 : 1 / 1.15, x, y);
   }, { passive: false });
-  let arrastre = null;
-  svg.addEventListener("pointerdown", (ev) => { arrastre = { x: ev.clientX, y: ev.clientY, vb: { ...vb } }; svg.setPointerCapture(ev.pointerId); });
-  svg.addEventListener("pointermove", (ev) => {
-    if (!arrastre) return;
-    const s = punto(ev)[2];
-    vb.x = arrastre.vb.x - (ev.clientX - arrastre.x) * s;
-    vb.y = arrastre.vb.y - (ev.clientY - arrastre.y) * s;
-    aplicar();
+  // Arrastrar (ratón o un dedo) mueve el mapa; dos dedos hacen zoom (pellizco).
+  const dedos = new Map();
+  let arrastre = null, pellizco = null;
+  const reiniciar = () => {
+    const ps = [...dedos.values()];
+    arrastre = ps.length === 1 ? { x: ps[0].clientX, y: ps[0].clientY, vb: { ...vb } } : null;
+    pellizco = ps.length >= 2
+      ? { d: Math.hypot(ps[0].clientX - ps[1].clientX, ps[0].clientY - ps[1].clientY) || 1 }
+      : null;
+  };
+  svg.addEventListener("pointerdown", (ev) => {
+    dedos.set(ev.pointerId, ev);
+    svg.setPointerCapture(ev.pointerId);
+    reiniciar();
   });
-  svg.addEventListener("pointerup", () => { arrastre = null; });
+  svg.addEventListener("pointermove", (ev) => {
+    if (!dedos.has(ev.pointerId)) return;
+    dedos.set(ev.pointerId, ev);
+    if (pellizco) {
+      const [a, b] = [...dedos.values()];
+      const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) || 1;
+      const centro = { clientX: (a.clientX + b.clientX) / 2, clientY: (a.clientY + b.clientY) / 2 };
+      const [x, y] = punto(centro);
+      zoom(pellizco.d / d, x, y);
+      pellizco.d = d;
+    } else if (arrastre) {
+      const s = punto(ev)[2];
+      vb.x = arrastre.vb.x - (ev.clientX - arrastre.x) * s;
+      vb.y = arrastre.vb.y - (ev.clientY - arrastre.y) * s;
+      aplicar();
+    }
+  });
+  const soltar = (ev) => { dedos.delete(ev.pointerId); reiniciar(); };
+  svg.addEventListener("pointerup", soltar);
+  svg.addEventListener("pointercancel", soltar);
   return { svg, capas, animales, bellotas, zoom, ajustar, el, P };
 }
 
@@ -111,12 +136,15 @@ function crearMapa(svg, plano) {
   const tip = document.createElement("div");
   tip.className = "tooltip";
   document.addEventListener("DOMContentLoaded", () => document.body.appendChild(tip));
-  document.addEventListener("pointermove", (ev) => {
+  // pointermove (ratón) y pointerdown (tocar en el celular, donde no hay "hover").
+  const mostrar = (ev) => {
     const t = ev.target.closest ? ev.target.closest("[data-tip]") : null;
     if (!t) { tip.style.opacity = 0; return; }
     tip.textContent = t.dataset.tip;
     tip.style.opacity = 1;
     tip.style.left = Math.min(window.innerWidth - tip.offsetWidth - 12, ev.clientX + 14) + "px";
     tip.style.top = (ev.clientY + 16) + "px";
-  });
+  };
+  document.addEventListener("pointermove", mostrar);
+  document.addEventListener("pointerdown", mostrar);
 })();
