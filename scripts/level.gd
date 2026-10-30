@@ -546,6 +546,7 @@ func _on_dialogue_finished(paid: int, ok: bool, retry: bool) -> void:
 		Game.add_money(paid)
 		hud.toast("Cobraste $%d" % paid)
 		Sfx.play("bigcoin")
+		Game.vibrate(Game.VIBRATION_MS.media, 0.6)
 	elif not ok:
 		Sfx.play("bad")
 	a.mark_done(ok)
@@ -751,9 +752,11 @@ func _on_coin_entered(body: Node, coin: Area3D) -> void:
 	Api.track("moneda", {"valor": value, "bonus": value >= 25})
 	if value >= 25:
 		Sfx.play("bigcoin")
+		Game.vibrate(Game.VIBRATION_MS.media, 0.6)
 		hud.toast("¡Bonus! +$%d  (monedas: %d/%d)" % [value, coins_taken, coins_total], 2.5)
 	else:
 		Sfx.play("coin", 1.0 + minf(coins_taken, 10) * 0.02, -4.0)
+		Game.vibrate(Game.VIBRATION_MS.suave, 0.35)
 	coin.queue_free()
 
 
@@ -858,6 +861,7 @@ func _on_acorn_entered(body: Node, acorn: Area3D) -> void:
 	hud.level_acorns = acorns_taken
 	hud.refresh()
 	Sfx.play("bigcoin", 1.35)
+	Game.vibrate(Game.VIBRATION_MS.media, 0.7)
 	if acorns_taken == ACORNS_PER_LEVEL:
 		hud.toast("¡Encontraste todas las bellotas doradas de esta zona!", 3.5)
 	else:

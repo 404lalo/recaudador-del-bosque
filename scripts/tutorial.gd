@@ -16,13 +16,27 @@ enum Step { LOOK, WALK, SPRINT, JUMP, TALK, PREDATOR, GATE, DONE }
 const STEP_TEXT := {
 	Step.LOOK: "Mueve el RATÓN para mirar a tu alrededor.",
 	Step.WALK: "Camina con W A S D (o las flechas) hasta el primer cartel.",
-	Step.SPRINT: "Mantén SHIFT mientras caminas para correr.",
+	Step.SPRINT: "Mantén SHIFT mientras caminas para correr. (Q = dash)",
 	Step.JUMP: "Presiona ESPACIO para saltar el tronco.",
 	Step.TALK: "Acércate al Perrito Shiba y presiona E para cobrarle.",
 	Step.PREDATOR: "Sigue el camino... algo se mueve entre los árboles.",
 	Step.GATE: "Cruza el arco dorado para terminar el tutorial.",
 	Step.DONE: "¡Tutorial completado!",
 }
+## Versión para pantalla táctil (mismas acciones, otros controles).
+const STEP_TEXT_TOUCH := {
+	Step.LOOK: "Arrastra el dedo en la mitad derecha de la pantalla para mirar alrededor.",
+	Step.WALK: "Usa el joystick (pulgar izquierdo) para caminar hasta el primer cartel.",
+	Step.SPRINT: "Empuja el joystick hasta el borde para correr. (DASH = impulso)",
+	Step.JUMP: "Toca SALTAR para saltar el tronco.",
+	Step.TALK: "Acércate al Perrito Shiba y toca HABLAR para cobrarle.",
+}
+
+
+func _step_text(s: Step) -> String:
+	if Game.touch_active() and STEP_TEXT_TOUCH.has(s):
+		return STEP_TEXT_TOUCH[s]
+	return STEP_TEXT[s]
 
 var step := Step.LOOK
 var rng := RandomNumberGenerator.new()
@@ -66,7 +80,7 @@ func _ready() -> void:
 
 func _set_step(s: Step) -> void:
 	step = s
-	objective_label.text = STEP_TEXT[s]
+	objective_label.text = _step_text(s)
 	step_label.text = "TUTORIAL  ·  Paso %d de %d" % [mini(s + 1, Step.DONE), Step.DONE]
 
 
@@ -78,7 +92,10 @@ func _process(delta: float) -> void:
 			_look_amount += absf(player.yaw - _last_yaw)
 			_last_yaw = player.yaw
 			if _look_amount > 1.5:
-				hud.toast("¡Bien! Si pierdes el ratón, haz clic en la ventana. ESC lo libera.", 4.0)
+				if Game.touch_active():
+					hud.toast("¡Bien! Puedes mirar mientras caminas: usa los dos pulgares a la vez.", 4.0)
+				else:
+					hud.toast("¡Bien! Si pierdes el ratón, haz clic en la ventana. ESC lo libera.", 4.0)
 				_set_step(Step.WALK)
 		Step.WALK:
 			if player.global_position.z < -8.0:
@@ -176,7 +193,7 @@ func _run_predator() -> void:
 		wolf.play("Attack")
 		hud.toast("Fallaste. En un nivel real te habría robado dinero. La protección de la tienda reduce esa pérdida.", 6.0)
 	player.locked = false
-	objective_label.text = STEP_TEXT[Step.GATE]
+	objective_label.text = _step_text(Step.GATE)
 	await get_tree().create_timer(2.0).timeout
 	wolf.face(wolf.position + Vector3(-50, 0, 0))
 	wolf.play("Gallop")
@@ -223,10 +240,14 @@ func _to_menu() -> void:
 	get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
 
 
+func _skip_pressed() -> void:
+	if step != Step.DONE and not dialogue.visible:
+		_finish()
+
+
 func _unhandled_input(event: InputEvent) -> void:
-	# TAB salta el tutorial en cualquier momento.
-	if step != Step.DONE and event is InputEventKey and event.pressed and not event.echo \
-			and event.physical_keycode == KEY_TAB and not dialogue.visible:
+	# TAB (o Back en el gamepad) salta el tutorial en cualquier momento.
+	if step != Step.DONE and event.is_action_pressed("skip_tutorial") and not dialogue.visible:
 		_finish()
 
 
@@ -297,10 +318,11 @@ func _random_pos(min_x: float, max_x: float) -> Vector3:
 
 ## Carteles de madera con la lección de cada tramo.
 func _build_signs() -> void:
-	_sign(Vector3(3.2, 0, -4), "WASD / Flechas\npara caminar")
-	_sign(Vector3(-3.2, 0, -12), "SHIFT\npara correr")
-	_sign(Vector3(3.2, 0, -21), "ESPACIO\npara saltar")
-	_sign(Vector3(-3.2, 0, -33), "E\npara hablar")
+	var touch := Game.touch_active()
+	_sign(Vector3(3.2, 0, -4), "Joystick\npara caminar" if touch else "WASD / Flechas\npara caminar")
+	_sign(Vector3(-3.2, 0, -12), "Joystick a fondo\npara correr" if touch else "SHIFT\npara correr")
+	_sign(Vector3(3.2, 0, -21), "SALTAR\npara saltar" if touch else "ESPACIO\npara saltar")
+	_sign(Vector3(-3.2, 0, -33), "HABLAR\npara cobrar" if touch else "E\npara hablar")
 	_sign(Vector3(3.2, 0, -50), "¡Cuidado!\nDepredadores")
 
 
@@ -427,9 +449,11 @@ func _build_objective_ui() -> void:
 	add_child(layer)
 	var box := PanelContainer.new()
 	box.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	box.offset_left = -440
-	box.offset_right = -20
-	box.offset_top = 20
+	var sm := Game.safe_margins()
+	var right_gap: float = 20.0 + sm.right + (110.0 if Game.touch_active() else 0.0)  # deja libre el botón de pausa táctil
+	box.offset_left = -420 - right_gap
+	box.offset_right = -right_gap
+	box.offset_top = 20 + sm.top
 	box.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	layer.add_child(box)
 	var margin := MarginContainer.new()
@@ -447,11 +471,19 @@ func _build_objective_ui() -> void:
 	objective_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	objective_label.add_theme_font_size_override("font_size", 20)
 	vb.add_child(objective_label)
-	var skip := Label.new()
-	skip.text = "[TAB] Saltar tutorial"
-	skip.add_theme_font_size_override("font_size", 14)
-	skip.modulate = Color(1, 1, 1, 0.6)
-	vb.add_child(skip)
+	if Game.touch_active():
+		var skip_btn := Button.new()  # en el celular no hay TAB: botón tocable
+		skip_btn.text = "Saltar tutorial"
+		skip_btn.custom_minimum_size = Vector2(0, 48)
+		skip_btn.focus_mode = Control.FOCUS_NONE
+		skip_btn.pressed.connect(_skip_pressed)
+		vb.add_child(skip_btn)
+	else:
+		var skip := Label.new()
+		skip.text = "[TAB] Saltar tutorial"
+		skip.add_theme_font_size_override("font_size", 14)
+		skip.modulate = Color(1, 1, 1, 0.6)
+		vb.add_child(skip)
 
 
 func _spawn_layer(path: String) -> CanvasLayer:

@@ -21,10 +21,11 @@ func _ready() -> void:
 	layer = 10
 	panel = PanelContainer.new()
 	panel.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
-	panel.offset_left = 60
-	panel.offset_right = -60
-	panel.offset_top = -120
-	panel.offset_bottom = -30
+	var sm := Game.safe_margins()  # notch / bordes en el celular
+	panel.offset_left = 60 + sm.left
+	panel.offset_right = -60 - sm.right
+	panel.offset_top = -120 - sm.bottom
+	panel.offset_bottom = -30 - sm.bottom
 	panel.grow_vertical = Control.GROW_DIRECTION_BEGIN  # crece hacia arriba y nunca tapa los botones
 	add_child(panel)
 	var margin := MarginContainer.new()
@@ -76,7 +77,9 @@ func _add_button(txt: String, cb: Callable, disabled := false) -> void:
 	if disabled:
 		b.focus_mode = Control.FOCUS_NONE  # las flechas se saltan la opción ya fallada
 	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	b.add_theme_font_size_override("font_size", 18)
+	b.add_theme_font_size_override("font_size", 20 if Game.touch_active() else 18)
+	if Game.touch_active():
+		b.custom_minimum_size.y = 56  # fácil de tocar con el pulgar
 	b.pressed.connect(cb)
 	opts.add_child(b)
 	# El primer botón habilitado recibe el foco: así Espacio/Enter y las flechas funcionan

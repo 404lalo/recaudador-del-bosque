@@ -1,5 +1,7 @@
 extends CharacterBody3D
-## Recaudador en tercera persona. WASD mueve, ratón gira la cámara, Shift corre.
+## Recaudador en tercera persona. Solo lee acciones del Input Map (move_*, look_*, jump,
+## sprint, dash), así funciona igual con teclado, gamepad o controles táctiles.
+## La cámara también gira con el ratón (PC) o arrastrando el dedo (look_drag()).
 
 const WALK_SPEED := 6.0
 const SPRINT_SPEED := 10.0
@@ -12,6 +14,12 @@ const MOUSE_SENS := 0.003
 const CAM_DISTANCE := 5.5
 const PITCH_MIN := -1.2   # mirando hacia abajo
 const PITCH_MAX := 0.35   # mirando hacia arriba
+const LOOK_SPEED := 2.6         # rad/s con el stick derecho a fondo
+const TOUCH_LOOK_SENS := 0.006  # rad por pixel arrastrado en pantalla
+# Dash: impulso corto hacia donde te mueves (o hacia donde miras si estás quieto).
+const DASH_SPEED := 22.0
+const DASH_TIME := 0.16
+const DASH_COOLDOWN := 0.7
 # Screenshake: "trauma" de 0 a 1 que se va desvaneciendo; la vibración es trauma².
 const SHAKE_DECAY := 1.1       # cuánto trauma se pierde por segundo
 const SHAKE_MAX_OFFSET := 0.9  # desplazamiento máximo de la cámara (metros)
@@ -21,7 +29,7 @@ const HARD_LANDING := 10.0     # velocidad de caída a partir de la cual el ater
 var locked := false:
 	set(v):
 		locked = v
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if v else Input.MOUSE_MODE_CAPTURED
+		Game.capture_mouse(not v)
 
 var yaw := 0.0
 var pitch := -0.25
@@ -35,6 +43,10 @@ var air_jumps := 1
 var was_on_floor := true
 var step_timer := 0.0
 var fall_speed := 0.0
+var dash_timer := 0.0     # > 0 mientras dura el dash
+var dash_cooldown := 0.0
+var dash_dir := Vector3.ZERO
+var air_dash := true      # un dash en el aire por salto
 var trauma := 0.0
 var shake_time := 0.0
 var noise := FastNoiseLite.new()
@@ -68,7 +80,7 @@ func _ready() -> void:
 	shape.shape = cap
 	shape.position.y = 0.9
 	add_child(shape)
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	Game.capture_mouse(true)
 
 
 func _build_body() -> void:
@@ -110,7 +122,8 @@ func _mesh(mesh: Mesh, mat: Material, pos: Vector3, scl := Vector3.ONE) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if locked:
+	# El ratón es la "cámara" de PC; con controles táctiles se usa look_drag() en su lugar.
+	if locked or Game.touch_active():
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		yaw -= event.relative.x * MOUSE_SENS
@@ -118,19 +131,36 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	elif event is InputEventMouseButton and event.pressed:
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		Game.capture_mouse(true)
+
+
+## Gira la cámara al arrastrar el dedo (lo llama touch_controls.gd). relative en pixeles.
+func look_drag(relative: Vector2) -> void:
+	if locked:
+		return
+	var k := TOUCH_LOOK_SENS * Game.look_sensitivity
+	yaw -= relative.x * k
+	pitch = clamp(pitch - relative.y * k, PITCH_MIN, PITCH_MAX)
 
 
 func _physics_process(delta: float) -> void:
+	if not locked:  # stick derecho del gamepad
+		var look := Input.get_vector("look_left", "look_right", "look_up", "look_down")
+		yaw -= look.x * LOOK_SPEED * Game.look_sensitivity * delta
+		pitch = clamp(pitch - look.y * LOOK_SPEED * 0.6 * Game.look_sensitivity * delta, PITCH_MIN, PITCH_MAX)
 	pivot.rotation = Vector3(pitch, yaw, 0)
 	var on_floor := is_on_floor()
 	if on_floor:
 		coyote = COYOTE_TIME
 		air_jumps = 1
+		air_dash = true
 		if not was_on_floor:
 			Sfx.play("land", 1.0, -6.0)
 			if fall_speed > HARD_LANDING:  # aterrizaje fuerte
 				add_trauma(clampf((fall_speed - HARD_LANDING) / 10.0, 0.4, 0.8))
+	elif dash_timer > 0.0:
+		coyote = maxf(0.0, coyote - delta)
+		velocity.y = maxf(velocity.y, 0.0)  # el dash no cae: se siente como un impulso horizontal
 	else:
 		coyote = maxf(0.0, coyote - delta)
 		velocity.y -= GRAVITY * delta
@@ -138,8 +168,10 @@ func _physics_process(delta: float) -> void:
 	jump_buffer = maxf(0.0, jump_buffer - delta)
 	var dir := Vector3.ZERO
 	if not locked:
+		# get_vector aplica la zona muerta de las acciones (la misma para stick y joystick táctil)
+		# y conserva la fuerza analógica: empujar poco = caminar lento.
 		var input := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
-		dir = (Basis(Vector3.UP, yaw) * Vector3(input.x, 0, input.y)).normalized()
+		dir = Basis(Vector3.UP, yaw) * Vector3(input.x, 0, input.y)
 		if Input.is_action_just_pressed("jump"):
 			jump_buffer = JUMP_BUFFER
 		if jump_buffer > 0.0:
@@ -156,9 +188,17 @@ func _physics_process(delta: float) -> void:
 		# Salto variable: soltar la tecla recorta el salto.
 		if Input.is_action_just_released("jump") and velocity.y > 3.0:
 			velocity.y *= 0.55
-	var speed := SPRINT_SPEED if Input.is_action_pressed("sprint") else WALK_SPEED
-	velocity.x = dir.x * speed
-	velocity.z = dir.z * speed
+		if Input.is_action_just_pressed("dash"):
+			_try_dash(dir)
+	dash_cooldown = maxf(0.0, dash_cooldown - delta)
+	var speed := SPRINT_SPEED if Input.is_action_pressed("sprint") and not locked else WALK_SPEED
+	if dash_timer > 0.0:
+		dash_timer -= delta
+		velocity.x = dash_dir.x * DASH_SPEED
+		velocity.z = dash_dir.z * DASH_SPEED
+	else:
+		velocity.x = dir.x * speed
+		velocity.z = dir.z * speed
 	if dir.length() > 0.1:
 		body_pivot.rotation.y = lerp_angle(body_pivot.rotation.y, atan2(-dir.x, -dir.z) + PI, 12.0 * delta)
 		if on_floor:
@@ -194,3 +234,21 @@ func _process(delta: float) -> void:
 		camera.h_offset = 0.0
 		camera.v_offset = 0.0
 		camera.rotation.z = 0.0
+
+
+func _try_dash(dir: Vector3) -> void:
+	if dash_cooldown > 0.0 or (not is_on_floor() and not air_dash):
+		return
+	if dir.length() < 0.1:  # quieto: hacia donde mira el personaje
+		dir = body_pivot.global_transform.basis.z
+	dash_dir = Vector3(dir.x, 0, dir.z).normalized()
+	dash_timer = DASH_TIME
+	dash_cooldown = DASH_COOLDOWN
+	if not is_on_floor():
+		air_dash = false
+	Sfx.play_varied("dash")
+	add_trauma(0.25)
+	Game.vibrate(25, 0.5)
+	var tw := create_tween()
+	tw.tween_property(camera, "fov", 84.0, 0.06)
+	tw.tween_property(camera, "fov", 75.0, 0.25)

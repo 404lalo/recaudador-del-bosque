@@ -2,6 +2,7 @@ extends Node
 ## Estado global del juego (autoload "Game"): dinero, protección, nivel actual y datos de animales.
 
 signal money_changed
+signal settings_changed  # cambió algún ajuste de controles (táctil, vibración, etc.)
 
 const ANIMALS_PATH := "res://assets/animals/%s.gltf"
 
@@ -212,6 +213,11 @@ func _ready() -> void:
 	# Atajo de desarrollo: godot --path . scenes/level.tscn -- --desert
 	if "--desert" in OS.get_cmdline_user_args():
 		level_index = 1
+	for test in ["touch", "shots"]:  # pruebas automáticas: carpeta tests/
+		if "--test=" + test in OS.get_cmdline_user_args():
+			var t := Node.new()
+			t.set_script(load("res://tests/%s_test.gd" % test))
+			add_child.call_deferred(t)
 	for arg in OS.get_cmdline_user_args():  # godot --path . scenes/level.tscn -- --level=5
 		if arg.begins_with("--level="):
 			level_index = clampi(int(arg.substr(8)) - 1, 0, LEVELS.size() - 1)
@@ -223,6 +229,10 @@ func _ready() -> void:
 func _input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F12:
 		take_screenshot()
+	elif event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F3:
+		# Depuración: muestra/oculta los controles táctiles en PC (se prueban con el ratón).
+		set_control("touch_mode", "auto" if touch_mode == "on" else "on")
+		capture_mouse(false)
 
 
 func take_screenshot() -> void:
@@ -296,6 +306,7 @@ func snapshot() -> Dictionary:
 ## Sacude la cámara del jugador (0.0 - 1.0). Se puede llamar desde cualquier script.
 func shake(amount: float) -> void:
 	get_tree().call_group("player", "add_trauma", amount)
+	vibrate(int(lerpf(30.0, 80.0, clampf(amount, 0.0, 1.0))), clampf(0.4 + amount * 0.6, 0.0, 1.0))
 
 
 func add_money(amount: int) -> void:
@@ -516,24 +527,139 @@ func pick_trivia(tier := -1) -> Dictionary:
 	return _pick_unused(TRIVIA_HARD if tier >= 2 else TRIVIA)
 
 
+## Capa de entrada unificada: el juego SOLO lee acciones del Input Map. Aquí cada acción
+## recibe teclado + gamepad; los controles táctiles (touch_controls.gd) presionan estas
+## mismas acciones con Input.action_press(). Así el personaje no sabe qué dispositivo se usa.
+const KEYS := {
+	"move_forward": [KEY_W, KEY_UP],
+	"move_back": [KEY_S, KEY_DOWN],
+	"move_left": [KEY_A, KEY_LEFT],
+	"move_right": [KEY_D, KEY_RIGHT],
+	"sprint": [KEY_SHIFT],
+	"dash": [KEY_Q],
+	"interact": [KEY_E],
+	"jump": [KEY_SPACE],
+	"pause": [KEY_P],
+	"skip_tutorial": [KEY_TAB],
+	"look_left": [], "look_right": [], "look_up": [], "look_down": [],
+}
+const PAD_BUTTONS := {
+	"move_forward": [JOY_BUTTON_DPAD_UP],
+	"move_back": [JOY_BUTTON_DPAD_DOWN],
+	"move_left": [JOY_BUTTON_DPAD_LEFT],
+	"move_right": [JOY_BUTTON_DPAD_RIGHT],
+	"jump": [JOY_BUTTON_A],
+	"dash": [JOY_BUTTON_B],
+	"interact": [JOY_BUTTON_X],
+	"sprint": [JOY_BUTTON_LEFT_SHOULDER, JOY_BUTTON_LEFT_STICK],
+	"pause": [JOY_BUTTON_START],
+	"skip_tutorial": [JOY_BUTTON_BACK],
+}
+const PAD_AXES := {  # acción: [eje, dirección]
+	"move_left": [JOY_AXIS_LEFT_X, -1.0], "move_right": [JOY_AXIS_LEFT_X, 1.0],
+	"move_forward": [JOY_AXIS_LEFT_Y, -1.0], "move_back": [JOY_AXIS_LEFT_Y, 1.0],
+	"look_left": [JOY_AXIS_RIGHT_X, -1.0], "look_right": [JOY_AXIS_RIGHT_X, 1.0],
+	"look_up": [JOY_AXIS_RIGHT_Y, -1.0], "look_down": [JOY_AXIS_RIGHT_Y, 1.0],
+}
+const ANALOG_ACTIONS := ["move_left", "move_right", "move_forward", "move_back",
+	"look_left", "look_right", "look_up", "look_down"]
+
+
 func _setup_input() -> void:
-	var map := {
-		"move_forward": [KEY_W, KEY_UP],
-		"move_back": [KEY_S, KEY_DOWN],
-		"move_left": [KEY_A, KEY_LEFT],
-		"move_right": [KEY_D, KEY_RIGHT],
-		"sprint": [KEY_SHIFT],
-		"interact": [KEY_E],
-		"jump": [KEY_SPACE],
-		"pause": [KEY_P],
-	}
-	for action in map:
+	for action in KEYS:
 		if not InputMap.has_action(action):
 			InputMap.add_action(action)
-		for k in map[action]:
+		for k in KEYS[action]:
 			var ev := InputEventKey.new()
 			ev.physical_keycode = k
 			InputMap.action_add_event(action, ev)
+		for b in PAD_BUTTONS.get(action, []):
+			var jb := InputEventJoypadButton.new()
+			jb.button_index = b
+			InputMap.action_add_event(action, jb)
+		if PAD_AXES.has(action):
+			var jm := InputEventJoypadMotion.new()
+			jm.axis = PAD_AXES[action][0]
+			jm.axis_value = PAD_AXES[action][1]
+			InputMap.action_add_event(action, jm)
+
+
+# ---------------------------------------------------------------- ajustes de controles
+
+## Se guardan en user://settings.cfg, sección [controles].
+const TOUCH_MODES := ["auto", "on", "off"]  # auto = solo si hay pantalla táctil; on = depuración en PC
+var touch_mode := "auto"
+var touch_opacity := 0.55   # 0.3 - 0.9
+var touch_scale := 1.0      # 0.75 - 1.5 (multiplica el tamaño base de los controles)
+var deadzone := 0.2         # 0.05 - 0.4 (joystick virtual y sticks del gamepad)
+var look_sensitivity := 1.0 # 0.5 - 2.0 (arrastre táctil y stick derecho)
+var vibration := true
+const VIBRATION_MS := {"suave": 30, "media": 50, "fuerte": 80}
+
+
+## ¿Se muestran los controles táctiles?
+func touch_active() -> bool:
+	match touch_mode:
+		"on":
+			return true
+		"off":
+			return false
+	return DisplayServer.is_touchscreen_available()
+
+
+## Atrapa el ratón para la cámara en PC. Con controles táctiles el puntero queda libre.
+func capture_mouse(captured: bool) -> void:
+	if touch_active():
+		captured = false
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED if captured else Input.MOUSE_MODE_VISIBLE
+
+
+## Vibración háptica (solo hace algo en Android/iOS y si el jugador la tiene activada).
+func vibrate(ms: int, amplitude := -1.0) -> void:
+	if vibration and OS.has_feature("mobile"):
+		Input.vibrate_handheld(ms, amplitude)
+
+
+## Márgenes de la safe area (notch, bordes redondeados) en coordenadas del viewport.
+func safe_margins() -> Dictionary:
+	var vp := get_viewport().get_visible_rect().size
+	var win := Vector2(DisplayServer.window_get_size())
+	var out := {"left": 0.0, "top": 0.0, "right": 0.0, "bottom": 0.0}
+	if win.x <= 0 or win.y <= 0:
+		return out
+	var safe := DisplayServer.get_display_safe_area()
+	var screen := Rect2i(DisplayServer.screen_get_position(), DisplayServer.screen_get_size())
+	if safe.size.x <= 0 or not OS.has_feature("mobile"):
+		return out  # en PC no hay notch
+	var f := vp / win
+	out.left = maxf(0.0, safe.position.x - screen.position.x) * f.x
+	out.top = maxf(0.0, safe.position.y - screen.position.y) * f.y
+	out.right = maxf(0.0, screen.end.x - safe.end.x) * f.x
+	out.bottom = maxf(0.0, screen.end.y - safe.end.y) * f.y
+	return out
+
+
+func _apply_deadzone() -> void:
+	for a in ANALOG_ACTIONS:
+		if InputMap.has_action(a):
+			InputMap.action_set_deadzone(a, deadzone)
+
+
+func set_control(key: String, value) -> void:
+	match key:
+		"touch_mode": touch_mode = str(value)
+		"touch_opacity": touch_opacity = clampf(float(value), 0.2, 1.0)
+		"touch_scale": touch_scale = clampf(float(value), 0.6, 1.6)
+		"deadzone": deadzone = clampf(float(value), 0.0, 0.5)
+		"look_sensitivity": look_sensitivity = clampf(float(value), 0.3, 3.0)
+		"vibration": vibration = bool(value)
+	_apply_deadzone()
+	var cfg := ConfigFile.new()
+	cfg.load(SETTINGS_PATH)
+	for k in ["touch_mode", "touch_opacity", "touch_scale", "deadzone", "look_sensitivity", "vibration"]:
+		cfg.set_value("controles", k, get(k))
+	cfg.save(SETTINGS_PATH)
+	settings_changed.emit()
 
 
 # ---------------------------------------------------------------- guardado (ranuras)
@@ -669,3 +795,12 @@ func _load_settings() -> void:
 	var cfg := ConfigFile.new()
 	if cfg.load(SETTINGS_PATH) == OK:
 		tutorial_done = bool(cfg.get_value("progress", "tutorial_done", false))
+		touch_mode = str(cfg.get_value("controles", "touch_mode", touch_mode))
+		if not touch_mode in TOUCH_MODES:
+			touch_mode = "auto"
+		touch_opacity = float(cfg.get_value("controles", "touch_opacity", touch_opacity))
+		touch_scale = float(cfg.get_value("controles", "touch_scale", touch_scale))
+		deadzone = float(cfg.get_value("controles", "deadzone", deadzone))
+		look_sensitivity = float(cfg.get_value("controles", "look_sensitivity", look_sensitivity))
+		vibration = bool(cfg.get_value("controles", "vibration", vibration))
+	_apply_deadzone()
